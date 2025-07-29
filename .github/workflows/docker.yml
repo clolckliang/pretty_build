@@ -1,0 +1,256 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create Dockerfile
+      run: |
+        cat > Dockerfile << 'EOF'
+        # Pretty Build - Docker Image
+        FROM python:3.11-slim
+
+        LABEL org.opencontainers.image.source=https://github.com/prettybuild/pretty-build
+        LABEL org.opencontainers.image.description="Pretty Build - Enhanced Build System Wrapper"
+        LABEL org.opencontainers.image.licenses=MIT
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            make \
+            git \
+            && apt-get clean \
+            && rm -rf /var/lib/apt/lists/*
+
+        # Set up working directory
+        WORKDIR /app
+
+        # Copy project files
+        COPY . .
+
+        # Install Python dependencies
+        RUN pip install --no-cache-dir -e .
+
+        # Set entrypoint
+        ENTRYPOINT ["pretty-build"]
+        CMD ["--help"]
+        EOF
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to the Container registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,format=short
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Create TUI Dockerfile
+      run: |
+        cat > Dockerfile.tui << 'EOF'
+        # Pretty Build TUI - Docker Image
+        FROM python:3.11-slim
+
+        LABEL org.opencontainers.image.source=https://github.com/prettybuild/pretty-build
+        LABEL org.opencontainers.image.description="Pretty Build TUI - Textual User Interface"
+        LABEL org.opencontainers.image.licenses=MIT
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            make \
+            git \
+            && apt-get clean \
+            && rm -rf /var/lib/apt/lists/*
+
+        # Set up working directory
+        WORKDIR /app
+
+        # Copy project files
+        COPY . .
+
+        # Install Python dependencies
+        RUN pip install --no-cache-dir -e .
+
+        # Set entrypoint
+        ENTRYPOINT ["pretty-build-tui"]
+        EOF
+
+    - name: Extract metadata for TUI Docker
+      id: meta-tui
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-tui
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,format=short
+
+    - name: Build and push TUI Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: Dockerfile.tui
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta-tui.outputs.tags }}
+        labels: ${{ steps.meta-tui.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  test-docker:
+    name: Test Docker Image
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name != 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set image tag
+      id: image-tag
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          TAG="${{ github.ref_name }}"
+        elif [[ "${{ github.ref }}" == refs/heads/* ]]; then
+          TAG="${{ github.ref_name }}"
+        else
+          TAG="sha-${{ github.sha }}"
+        fi
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Test Docker image
+      run: |
+        # Pull the image
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }}
+        
+        # Test the CLI image
+        docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }} --version
+        
+        # Create a test project
+        mkdir -p test-project
+        cd test-project
+        
+        # Create a simple Makefile
+        cat > Makefile << 'EOF'
+        all:
+        	@echo "Building test project..."
+        	@echo "Done!"
+
+        clean:
+        	@echo "Cleaning..."
+        EOF
+        
+        # Test with the Docker image
+        docker run --rm -v $(pwd):/workspace -w /workspace ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.image-tag.outputs.tag }} make
+
+    - name: Create Docker usage documentation
+      run: |
+        cat > DOCKER_USAGE.md << 'EOF'
+        # Pretty Build Docker Images
+
+        This repository provides Docker images for Pretty Build, an enhanced build system wrapper with beautiful UI.
+
+        ## Available Images
+
+        - `ghcr.io/prettybuild/pretty-build:latest` - CLI version
+        - `ghcr.io/prettybuild/pretty-build-tui:latest` - TUI version
+
+        ## Usage
+
+        ### CLI Version
+
+        ```bash
+        # Run Pretty Build with your build command
+        docker run --rm -v $(pwd):/workspace -w /workspace ghcr.io/prettybuild/pretty-build:latest make
+
+        # Get help
+        docker run --rm ghcr.io/prettybuild/pretty-build:latest --help
+        ```
+
+        ### TUI Version
+
+        ```bash
+        # Run Pretty Build TUI
+        docker run --rm -it -v $(pwd):/workspace -w /workspace ghcr.io/prettybuild/pretty-build-tui:latest
+        ```
+
+        ## Tags
+
+        - `latest` - Latest stable release
+        - `main` - Latest development version from main branch
+        - `develop` - Latest development version from develop branch
+        - `vX.Y.Z` - Specific version (e.g., v1.1.0)
+        - `X.Y` - Major.Minor version (e.g., 1.1)
+
+        ## Configuration
+
+        You can mount your configuration file:
+
+        ```bash
+        docker run --rm -v $(pwd):/workspace -v ~/.pretty_build.conf:/root/.pretty_build.conf -w /workspace ghcr.io/prettybuild/pretty-build:latest make
+        ```
+        EOF
+
+    - name: Upload Docker usage documentation
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-documentation
+        path: DOCKER_USAGE.md
