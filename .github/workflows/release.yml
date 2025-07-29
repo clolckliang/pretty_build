@@ -11,6 +11,11 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
 env:
   PYTHON_VERSION: "3.11"
 
@@ -38,7 +43,7 @@ jobs:
       id: create_release
       uses: softprops/action-gh-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
       with:
         tag_name: ${{ steps.get_version.outputs.version }}
         name: Pretty Build ${{ steps.get_version.outputs.version }}
@@ -123,7 +128,7 @@ jobs:
     - name: Upload Release Assets
       uses: softprops/action-gh-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
       with:
         tag_name: ${{ needs.create-release.outputs.version }}
         files: |
