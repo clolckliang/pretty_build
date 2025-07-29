@@ -19,7 +19,6 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
 
     steps:
@@ -37,12 +36,12 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.get_version.outputs.version }}
-        release_name: Pretty Build ${{ steps.get_version.outputs.version }}
+        name: Pretty Build ${{ steps.get_version.outputs.version }}
         body: |
           ## Changes in ${{ steps.get_version.outputs.version }}
           
@@ -66,7 +65,7 @@ jobs:
           pretty-build-tui
           ```
           
-          For more information, see the [documentation](https://github.com/prettybuild/pretty-build/blob/main/README.md).
+          For more information, see the [documentation](https://github.com/clolckliang/pretty_build/blob/main/README.md).
         draft: false
         prerelease: false
 
@@ -121,27 +120,14 @@ jobs:
         copy dist\pretty-build-tui-${{ runner.os }}.exe release-assets\ 2>nul || echo "No TUI executable"
         powershell Compress-Archive -Path release-assets\* -DestinationPath pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
 
-    - name: Upload Release Asset (Unix)
-      if: runner.os != 'Windows'
-      uses: actions/upload-release-asset@v1
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.tar.gz
-        asset_name: pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.tar.gz
-        asset_content_type: application/gzip
-
-    - name: Upload Release Asset (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
-        asset_name: pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
-        asset_content_type: application/zip
+        tag_name: ${{ needs.create-release.outputs.version }}
+        files: |
+          pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.*
 
   publish-pypi:
     name: Publish to PyPI
