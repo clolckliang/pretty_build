@@ -7,85 +7,73 @@ A beautiful wrapper for various build systems using Rich library
 Enhanced version with responsive grid layout, keyboard interactions, and real-time configuration.
 """
 
+import argparse
 import asyncio
+import configparser
+import hashlib
+import json
+import logging
+import os
+import pickle
+import platform
+import queue
+import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
-import re
-import time
-import argparse
-import os
-import signal
+import tempfile
 import threading
-import queue
-import json
-import hashlib
-import pickle
-import psutil
-import platform
-import socket
+import time
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from pathlib import Path
 from typing import (
-    Tuple,
-    Optional,
+    Any,
+    Callable,
     Dict,
     List,
-    Any,
-    Protocol,
     NamedTuple,
-    Callable,
+    Optional,
+    Protocol,
+    Tuple,
     Union,
 )
-from pathlib import Path
-from dataclasses import dataclass, field
-from enum import Enum
-from contextlib import contextmanager
-from abc import ABC, abstractmethod
-import configparser
-import tempfile
-import logging
+
+import psutil
+from rich import box
+from rich.align import Align
+from rich.columns import Columns
 
 # Rich imports
 from rich.console import Console, Group
+from rich.layout import Layout
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.progress import (
-    Progress,
     BarColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
     MofNCompleteColumn,
-    SpinnerColumn,
-)
-from rich.text import Text
-from rich.table import Table
-from rich.live import Live
-from rich.layout import Layout
-from rich.align import Align
-from rich.rule import Rule
-from rich.tree import Tree
-from rich import box
-from rich.syntax import Syntax
-from rich.markdown import Markdown
-from rich.status import Status
-from rich.columns import Columns
-from rich.prompt import Prompt, Confirm, IntPrompt
-from rich.traceback import install
-from rich.padding import Padding
-from rich.spinner import Spinner
-from rich.layout import Layout
-from rich.live import Live
-from rich.progress import (
     Progress,
     SpinnerColumn,
     TextColumn,
-    BarColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from rich.align import Align
-from rich.console import Group
-import time
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.rule import Rule
+from rich.spinner import Spinner
+from rich.status import Status
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+from rich.traceback import install
+from rich.tree import Tree
 
 # Install rich traceback handler
 install(show_locals=True)
@@ -2122,7 +2110,9 @@ class KeyboardInputHandler:
                         pass  # Ignore non-utf8 keys
                 time.sleep(0.05)
         else:
-            import tty, termios, select
+            import select
+            import termios
+            import tty
 
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
