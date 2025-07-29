@@ -1,0 +1,33 @@
+# Include documentation files
+include README.md
+include PACKAGE_README.md
+include LICENSE
+include requirements.txt
+include package_info.json
+
+# Include configuration files
+include config/.pretty_build.conf.example
+recursive-include config/templates *.cfg
+
+# Include scripts
+recursive-include scripts *.bat *.sh
+
+# Include documentation
+recursive-include docs *.md
+
+# Include examples
+recursive-include examples *.py
+recursive-include examples/tests *.py
+
+# Include GitHub workflows (for reference)
+recursive-include .github/workflows *.yml
+
+# Exclude unnecessary files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude .idea
