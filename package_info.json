@@ -1,0 +1,36 @@
+{
+  "name": "pretty_build",
+  "version": "1.1.0",
+  "description": "Pretty Build - 增强型构建系统包装器",
+  "author": "Pretty Build Team",
+  "license": "MIT",
+  "created": "2025-07-29T15:24:24.755660",
+  "python_requires": ">=3.8",
+  "dependencies": [
+    "rich>=13.0.0",
+    "textual>=0.41.0",
+    "click>=8.0.0",
+    "psutil>=5.9.0",
+    "plyer>=2.1.0",
+    "configparser>=5.3.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+    "mypy>=1.0.0"
+  ],
+  "features": [
+    "美观的构建界面",
+    "实时性能监控",
+    "智能缓存系统",
+    "插件系统",
+    "Textual TUI界面",
+    "交互式配置",
+    "通知系统"
+  ],
+  "entry_points": {
+    "main": "pretty_build.py",
+    "tui": "pretty_build.py --tui",
+    "demo": "demo.py"
+  }
+}

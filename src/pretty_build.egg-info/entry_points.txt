@@ -1,0 +1,5 @@
+[console_scripts]
+pb = pretty_build:main
+pbt = pretty_build:main_tui
+pretty-build = pretty_build:main
+pretty-build-tui = pretty_build:main_tui
