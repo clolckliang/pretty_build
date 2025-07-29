@@ -274,7 +274,7 @@ class PluginManager(Static):
             yield Label("Plugin Manager", classes="panel-title")
             
             # 插件列表
-            table = DataTable()
+            table: DataTable = DataTable()
             table.add_columns("Plugin", "Status", "Version")
             table.add_row("CMake", "Active", "1.0.0")
             table.add_row("Ninja", "Active", "1.11.0")

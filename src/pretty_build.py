@@ -746,13 +746,13 @@ class NotificationManager:
         """Play notification sound"""
         try:
             if platform.system() == "Windows":
-                import winsound
+                import ctypes
                 if notification_type == NotificationType.ERROR:
-                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                    ctypes.windll.user32.MessageBeep(0x00000010)  # MB_ICONHAND
                 elif notification_type == NotificationType.SUCCESS:
-                    winsound.MessageBeep(winsound.MB_OK)
+                    ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
                 else:
-                    winsound.MessageBeep(winsound.MB_ICONASTERISK)
+                    ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
         except Exception:
             pass  # Ignore sound errors
 
@@ -970,8 +970,8 @@ class TUIManager:
             state = self.build_runner.build_state
             table.add_row("已编译文件", str(state.stats.files_compiled))
             table.add_row("构建目标", str(state.stats.targets_built))
-            table.add_row("错误数", str(state.stats.error_count))
-            table.add_row("警告数", str(state.stats.warning_count))
+            table.add_row("错误数", str(state.stats.errors))
+            table.add_row("警告数", str(state.stats.warnings))
         else:
             table.add_row("状态", "等待中...")
             
@@ -1526,7 +1526,7 @@ class InteractiveConfigManager:
                 'name': '并行任务数',
                 'type': int,
                 'min': 1,
-                'max': os.cpu_count() * 2 if os.cpu_count() else 8,
+                'max': (os.cpu_count() or 4) * 2,
                 'description': '并行编译任务的数量'
             },
             'build_type': {
@@ -1597,7 +1597,7 @@ class InteractiveConfigManager:
                 elif option['type'] == int:
                     new_value = IntPrompt.ask(
                         f"为 {option['name']} 输入新值",
-                        default=current_value
+                        default=int(current_value) if current_value is not None else 1
                     )
                     setattr(self.config, key_to_edit, new_value)
                 elif 'choices' in option:
@@ -2115,11 +2115,11 @@ class InteractiveBuildRunner:
     def run_build(self, build_system_name: str, args: List[str], is_rebuild: bool = False) -> int:
         """Run the build with interactive features."""
         implementations = {
-            'ninja': NinjaBuildSystem(),
             'make': MakeBuildSystem(),
+            'ninja': NinjaBuildSystem(),
             'cmake': CMakeBuildSystem()
         }
-        implementation = implementations.get(build_system_name)
+        implementation: Optional[BuildSystemProtocol] = implementations.get(build_system_name)
         if not implementation:
             self.console.print(f"❌ [red]不支持的构建系统: {build_system_name}[/red]")
             return 1
@@ -2394,7 +2394,7 @@ class BuildSystemDetector:
     """Intelligent build system detection."""
 
     @staticmethod
-    def detect_from_files(directory: Path = None) -> Optional[str]:
+    def detect_from_files(directory: Optional[Path] = None) -> Optional[str]:
         """Detect build system from project files."""
         if directory is None:
             directory = Path.cwd()
