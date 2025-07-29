@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.2.0)'
+        required: true
+        type: string
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        release_name: Pretty Build ${{ steps.get_version.outputs.version }}
+        body: |
+          ## Changes in ${{ steps.get_version.outputs.version }}
+          
+          ### 🚀 New Features
+          - Enhanced build system wrapper with rich UI
+          - Improved TUI interface with Textual
+          - Better error handling and logging
+          
+          ### 🐛 Bug Fixes
+          - Fixed various stability issues
+          - Improved cross-platform compatibility
+          
+          ### 📦 Installation
+          ```bash
+          pip install pretty-build==${{ steps.get_version.outputs.version }}
+          ```
+          
+          ### 🔧 Usage
+          ```bash
+          pretty-build --help
+          pretty-build-tui
+          ```
+          
+          For more information, see the [documentation](https://github.com/prettybuild/pretty-build/blob/main/README.md).
+        draft: false
+        prerelease: false
+
+  build-and-upload:
+    name: Build and Upload Assets
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine pyinstaller
+
+    - name: Build Python package
+      run: |
+        python -m build
+
+    - name: Build standalone executable
+      run: |
+        pip install -e .
+        pyinstaller --onefile --name pretty-build-${{ runner.os }} src/pretty_build.py
+        pyinstaller --onefile --name pretty-build-tui-${{ runner.os }} src/textual_tui.py
+
+    - name: Create archive (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir -p release-assets
+        cp dist/*.tar.gz release-assets/ || true
+        cp dist/*.whl release-assets/ || true
+        cp dist/pretty-build-${{ runner.os }} release-assets/ || true
+        cp dist/pretty-build-tui-${{ runner.os }} release-assets/ || true
+        tar -czf pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.tar.gz -C release-assets .
+
+    - name: Create archive (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir release-assets
+        copy dist\*.whl release-assets\ 2>nul || echo "No wheel files"
+        copy dist\pretty-build-${{ runner.os }}.exe release-assets\ 2>nul || echo "No executable"
+        copy dist\pretty-build-tui-${{ runner.os }}.exe release-assets\ 2>nul || echo "No TUI executable"
+        powershell Compress-Archive -Path release-assets\* -DestinationPath pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
+
+    - name: Upload Release Asset (Unix)
+      if: runner.os != 'Windows'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.tar.gz
+        asset_name: pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Release Asset (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
+        asset_name: pretty-build-${{ needs.create-release.outputs.version }}-${{ runner.os }}.zip
+        asset_content_type: application/zip
+
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: create-release
+    environment: release
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: |
+        python -m build
+
+    - name: Check package
+      run: |
+        twine check dist/*
+
+    - name: Publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        twine upload dist/*
+
+  notify:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-upload, publish-pypi]
+    if: always()
+
+    steps:
+    - name: Notify Success
+      if: needs.build-and-upload.result == 'success' && needs.publish-pypi.result == 'success'
+      run: |
+        echo "🎉 Release ${{ needs.create-release.outputs.version }} published successfully!"
+        echo "📦 Available on PyPI: https://pypi.org/project/pretty-build/"
+        echo "📋 Release page: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.create-release.outputs.version }}"
+
+    - name: Notify Failure
+      if: needs.build-and-upload.result == 'failure' || needs.publish-pypi.result == 'failure'
+      run: |
+        echo "❌ Release ${{ needs.create-release.outputs.version }} failed!"
+        echo "Please check the workflow logs for details."

@@ -1,0 +1,123 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -e .[dev]
+
+    - name: Run black formatter check
+      run: |
+        black --check --diff src/
+
+    - name: Run isort import sorting check
+      run: |
+        pip install isort
+        isort --check-only --diff src/
+
+    - name: Run flake8 linting
+      run: |
+        flake8 src/ --format=github
+
+    - name: Run pylint
+      run: |
+        pip install pylint
+        pylint src/ --output-format=github || true
+
+    - name: Run mypy type checking
+      run: |
+        mypy src/ --ignore-missing-imports
+
+    - name: Run complexity analysis
+      run: |
+        pip install radon
+        radon cc src/ --min B
+        radon mi src/ --min B
+
+    - name: Check for security issues
+      run: |
+        pip install bandit
+        bandit -r src/ -ll
+
+    - name: Check dependencies for vulnerabilities
+      run: |
+        pip install safety
+        safety check
+
+  pre-commit:
+    name: Pre-commit Hooks
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install pre-commit
+      run: |
+        python -m pip install --upgrade pip
+        pip install pre-commit
+
+    - name: Cache pre-commit
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pre-commit
+        key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+    - name: Run pre-commit
+      run: |
+        # Create a basic pre-commit config if it doesn't exist
+        if [ ! -f .pre-commit-config.yaml ]; then
+          cat > .pre-commit-config.yaml << EOF
+        repos:
+        -   repo: https://github.com/pre-commit/pre-commit-hooks
+            rev: v4.4.0
+            hooks:
+            -   id: trailing-whitespace
+            -   id: end-of-file-fixer
+            -   id: check-yaml
+            -   id: check-added-large-files
+        -   repo: https://github.com/psf/black
+            rev: 23.3.0
+            hooks:
+            -   id: black
+        -   repo: https://github.com/pycqa/isort
+            rev: 5.12.0
+            hooks:
+            -   id: isort
+        -   repo: https://github.com/pycqa/flake8
+            rev: 6.0.0
+            hooks:
+            -   id: flake8
+        EOF
+        fi
+        pre-commit run --all-files

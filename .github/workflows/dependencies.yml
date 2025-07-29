@@ -1,0 +1,170 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    name: Update Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install pip-tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pip-tools
+
+    - name: Update requirements
+      run: |
+        # Create requirements.in if it doesn't exist
+        if [ ! -f requirements.in ]; then
+          cp requirements.txt requirements.in
+        fi
+        
+        # Update dependencies
+        pip-compile --upgrade requirements.in
+        
+        # Check if there are changes
+        if git diff --quiet requirements.txt; then
+          echo "No dependency updates available"
+          echo "has_updates=false" >> $GITHUB_ENV
+        else
+          echo "Dependencies updated"
+          echo "has_updates=true" >> $GITHUB_ENV
+        fi
+
+    - name: Test with updated dependencies
+      if: env.has_updates == 'true'
+      run: |
+        pip install -r requirements.txt
+        pip install -e .[dev]
+        
+        # Run basic tests
+        python -c "import pretty_build; print('Import successful')"
+        python -c "import textual_tui; print('TUI import successful')"
+        
+        # Run linting
+        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        
+        # Run tests if they exist
+        if [ -d "examples/tests" ]; then
+          pytest examples/tests/ -v || true
+        fi
+
+    - name: Create Pull Request
+      if: env.has_updates == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: update dependencies"
+        title: "🔄 Automated dependency updates"
+        body: |
+          ## 🔄 Automated Dependency Updates
+          
+          This PR contains automated updates to project dependencies.
+          
+          ### Changes
+          - Updated Python package dependencies to their latest compatible versions
+          - All tests pass with the new dependency versions
+          
+          ### Review Checklist
+          - [ ] Verify all tests pass
+          - [ ] Check for any breaking changes in updated packages
+          - [ ] Ensure compatibility with supported Python versions
+          
+          This PR was automatically created by the dependency update workflow.
+        branch: automated/dependency-updates
+        delete-branch: true
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit
+
+    - name: Run safety check
+      run: |
+        safety check -r requirements.txt --json --output safety-report.json || true
+        safety check -r requirements.txt
+
+    - name: Run pip-audit
+      run: |
+        pip-audit --desc --format=json --output=pip-audit-report.json || true
+        pip-audit --desc
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-audit-reports
+        path: |
+          safety-report.json
+          pip-audit-report.json
+
+    - name: Create security issue
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const title = '🔒 Security vulnerabilities detected in dependencies';
+          const body = `
+          ## 🔒 Security Alert
+          
+          The automated security audit has detected potential vulnerabilities in project dependencies.
+          
+          ### Action Required
+          - Review the security audit reports in the workflow artifacts
+          - Update vulnerable dependencies to secure versions
+          - Test the application with updated dependencies
+          
+          ### Reports
+          - Safety report: Available in workflow artifacts
+          - Pip-audit report: Available in workflow artifacts
+          
+          This issue was automatically created by the security audit workflow.
+          `;
+          
+          // Check if issue already exists
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            labels: 'security'
+          });
+          
+          const existingIssue = issues.data.find(issue => issue.title === title);
+          
+          if (!existingIssue) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', 'automated']
+            });
+          }

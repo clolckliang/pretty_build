@@ -1,0 +1,340 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'src/**/*.py'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'src/**/*.py'
+  workflow_dispatch:
+
+jobs:
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints myst-parser
+
+    - name: Install package
+      run: |
+        pip install -e .
+
+    - name: Create Sphinx configuration
+      run: |
+        mkdir -p docs/source
+        
+        # Create conf.py
+        cat > docs/source/conf.py << 'EOF'
+        import os
+        import sys
+        sys.path.insert(0, os.path.abspath('../../src'))
+
+        project = 'Pretty Build'
+        copyright = '2024, Pretty Build Team'
+        author = 'Pretty Build Team'
+        release = '1.1.0'
+
+        extensions = [
+            'sphinx.ext.autodoc',
+            'sphinx.ext.viewcode',
+            'sphinx.ext.napoleon',
+            'sphinx.ext.intersphinx',
+            'sphinx_autodoc_typehints',
+            'myst_parser',
+        ]
+
+        templates_path = ['_templates']
+        exclude_patterns = []
+
+        html_theme = 'sphinx_rtd_theme'
+        html_static_path = ['_static']
+
+        autodoc_default_options = {
+            'members': True,
+            'member-order': 'bysource',
+            'special-members': '__init__',
+            'undoc-members': True,
+            'exclude-members': '__weakref__'
+        }
+
+        intersphinx_mapping = {
+            'python': ('https://docs.python.org/3', None),
+            'rich': ('https://rich.readthedocs.io/en/stable/', None),
+            'textual': ('https://textual.textualize.io/', None),
+        }
+        EOF
+
+        # Create index.rst
+        cat > docs/source/index.rst << 'EOF'
+        Pretty Build Documentation
+        =========================
+
+        Welcome to Pretty Build's documentation!
+
+        Pretty Build is an enhanced build system wrapper that provides a beautiful interface 
+        and real-time monitoring for various build systems.
+
+        .. toctree::
+           :maxdepth: 2
+           :caption: Contents:
+
+           installation
+           usage
+           api
+           examples
+
+        Features
+        --------
+
+        * 🎨 Beautiful Rich-based UI with real-time progress
+        * 📊 Interactive TUI interface using Textual
+        * 🔧 Support for multiple build systems (CMake, Make, Ninja, etc.)
+        * 📈 Real-time performance monitoring
+        * 🔔 Desktop notifications
+        * 💾 Build caching and optimization
+        * 🎯 Cross-platform support
+
+        Quick Start
+        -----------
+
+        Install Pretty Build:
+
+        .. code-block:: bash
+
+           pip install pretty-build
+
+        Use the command line interface:
+
+        .. code-block:: bash
+
+           pretty-build --help
+           pretty-build-tui
+
+        Indices and tables
+        ==================
+
+        * :ref:`genindex`
+        * :ref:`modindex`
+        * :ref:`search`
+        EOF
+
+        # Create installation.rst
+        cat > docs/source/installation.rst << 'EOF'
+        Installation
+        ============
+
+        Requirements
+        ------------
+
+        * Python 3.8 or higher
+        * pip package manager
+
+        Install from PyPI
+        -----------------
+
+        .. code-block:: bash
+
+           pip install pretty-build
+
+        Install from Source
+        -------------------
+
+        .. code-block:: bash
+
+           git clone https://github.com/prettybuild/pretty-build.git
+           cd pretty-build
+           pip install -e .
+
+        Development Installation
+        ------------------------
+
+        .. code-block:: bash
+
+           git clone https://github.com/prettybuild/pretty-build.git
+           cd pretty-build
+           pip install -e .[dev]
+        EOF
+
+        # Create usage.rst
+        cat > docs/source/usage.rst << 'EOF'
+        Usage Guide
+        ===========
+
+        Command Line Interface
+        ----------------------
+
+        Basic usage:
+
+        .. code-block:: bash
+
+           pretty-build [OPTIONS] [BUILD_COMMAND]
+
+        Options:
+
+        * ``--help``: Show help message
+        * ``--verbose``: Enable verbose output
+        * ``--config``: Specify configuration file
+
+        TUI Interface
+        -------------
+
+        Launch the interactive TUI:
+
+        .. code-block:: bash
+
+           pretty-build-tui
+
+        The TUI provides:
+
+        * Real-time build progress
+        * Interactive controls
+        * Performance monitoring
+        * Log viewing
+
+        Configuration
+        -------------
+
+        Pretty Build can be configured using a configuration file:
+
+        .. code-block:: ini
+
+           [build]
+           parallel_jobs = 4
+           verbose_mode = false
+           enable_cache = true
+
+           [notifications]
+           enable_notifications = true
+           notification_sound = false
+        EOF
+
+        # Create api.rst
+        cat > docs/source/api.rst << 'EOF'
+        API Reference
+        =============
+
+        Pretty Build Module
+        -------------------
+
+        .. automodule:: pretty_build
+           :members:
+
+        Textual TUI Module
+        ------------------
+
+        .. automodule:: textual_tui
+           :members:
+        EOF
+
+        # Create examples.rst
+        cat > docs/source/examples.rst << 'EOF'
+        Examples
+        ========
+
+        Basic Build
+        -----------
+
+        .. code-block:: python
+
+           from pretty_build import PrettyBuild
+
+           builder = PrettyBuild()
+           builder.run_build("make")
+
+        TUI Example
+        -----------
+
+        .. code-block:: python
+
+           from textual_tui import run_textual_tui
+
+           class Config:
+               build_command = "ninja"
+               parallel_jobs = 4
+
+           run_textual_tui(Config())
+        EOF
+
+        # Create _static directory
+        mkdir -p docs/source/_static
+
+    - name: Build documentation
+      run: |
+        cd docs
+        sphinx-build -b html source _build/html
+
+    - name: Check documentation
+      run: |
+        # Check for broken links
+        cd docs
+        sphinx-build -b linkcheck source _build/linkcheck || true
+
+    - name: Upload documentation artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: documentation
+        path: docs/_build/html/
+
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download documentation
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation
+        path: docs/_build/html/
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/_build/html/
+        cname: prettybuild.dev  # Optional: if you have a custom domain
+
+  check-links:
+    name: Check Documentation Links
+    runs-on: ubuntu-latest
+    needs: build-docs
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download documentation
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation
+        path: docs/_build/html/
+
+    - name: Check links
+      uses: lycheeverse/lychee-action@v1
+      with:
+        args: --verbose --no-progress 'docs/_build/html/**/*.html'
+        fail: false  # Don't fail the workflow on broken links
