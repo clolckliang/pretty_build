@@ -747,12 +747,14 @@ class NotificationManager:
         try:
             if platform.system() == "Windows":
                 import ctypes
-                if notification_type == NotificationType.ERROR:
-                    ctypes.windll.user32.MessageBeep(0x00000010)  # MB_ICONHAND
-                elif notification_type == NotificationType.SUCCESS:
-                    ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
-                else:
-                    ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
+                # Type check for windll attribute
+                if hasattr(ctypes, 'windll'):
+                    if notification_type == NotificationType.ERROR:
+                        ctypes.windll.user32.MessageBeep(0x00000010)  # MB_ICONHAND
+                    elif notification_type == NotificationType.SUCCESS:
+                        ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
+                    else:
+                        ctypes.windll.user32.MessageBeep(0x00000040)  # MB_ICONASTERISK
         except Exception:
             pass  # Ignore sound errors
 
@@ -1595,17 +1597,25 @@ class InteractiveConfigManager:
                     new_value = Confirm.ask(f"启用 {option['name']}?", default=current_value)
                     setattr(self.config, key_to_edit, new_value)
                 elif option['type'] == int:
+                    current_value = getattr(self.config, key_to_edit)
+                    if current_value is not None:
+                        try:
+                            default_value: int = int(current_value)
+                        except (ValueError, TypeError):
+                            default_value = 1
+                    else:
+                        default_value = 1
                     new_value = IntPrompt.ask(
                         f"为 {option['name']} 输入新值",
-                        default=int(current_value) if current_value is not None else 1
-                    )
+                        default=default_value
+                    )  # type: ignore
                     setattr(self.config, key_to_edit, new_value)
                 elif 'choices' in option:
                     new_value = Prompt.ask(
                         f"为 {option['name']} 选择",
                         choices=option['choices'],
                         default=str(current_value)
-                    )
+                    )  # type: ignore
                     setattr(self.config, key_to_edit, new_value)
 
                 self.console.clear()  # Clear screen for next prompt
@@ -1634,7 +1644,7 @@ class InteractiveConfigManager:
                 str(i + 1),
                 f"[bold]{option['name']}[/bold]",
                 value_str,
-                option['description']
+                str(option['description'])
             )
 
         return Panel(
@@ -1913,7 +1923,7 @@ class ResponsiveOutputFormatter:
                 summary_text += f"\n发现 [yellow]{stats.warnings}[/] 个警告。"
 
         # Create a renderable group for the final panel
-        render_group = [Align.center(summary_text)]
+        render_group: List[Any] = [Align.center(summary_text)]
 
         # If memory report is available, add it
         if stats.memory_reports:
@@ -2119,7 +2129,7 @@ class InteractiveBuildRunner:
             'ninja': NinjaBuildSystem(),
             'cmake': CMakeBuildSystem()
         }
-        implementation: Optional[BuildSystemProtocol] = implementations.get(build_system_name)
+        implementation = implementations.get(build_system_name)
         if not implementation:
             self.console.print(f"❌ [red]不支持的构建系统: {build_system_name}[/red]")
             return 1
@@ -2136,7 +2146,7 @@ class InteractiveBuildRunner:
         if self.performance_monitor:
             self.performance_monitor.start_monitoring()
 
-        cmd = implementation.get_command(args, self.config)
+        cmd = implementation.get_command(args, self.config)  # type: ignore
 
         self.keyboard_handler.start()
 
@@ -2158,7 +2168,7 @@ class InteractiveBuildRunner:
             # Add a single task to the progress bar
             self.formatter.progress.add_task("[green]Building...", total=None)
 
-            return_code = self._monitor_build(implementation, state, build_system_name, args)
+            return_code = self._monitor_build(implementation, state, build_system_name, args)  # type: ignore
             
             # Notify plugins of build end
             self.plugin_manager.on_build_end(state, return_code)
@@ -2226,9 +2236,10 @@ class InteractiveBuildRunner:
                     time.sleep(0.1)
                     continue
 
-                line = self._process.stdout.readline()
-                if line:
-                    self._process_line(line.strip(), implementation, state)
+                if self._process and self._process.stdout:
+                    line = self._process.stdout.readline()
+                    if line:
+                        self._process_line(line.strip(), implementation, state)
 
                 live.update(self.formatter.create_build_display(state, self.config, build_system_name, args))
 
@@ -2379,12 +2390,12 @@ class InteractiveBuildRunner:
             # Regex to capture the memory line, e.g., "   RAM:   2392 B      20 KB      11.68%"
             match = re.match(r'\s*(RAM|FLASH):\s*(\d+\s*B)\s*(\d+\s*KB)\s*([\d.]+\s*%)', processed_line)
             if match:
-                region, used, total, percent = match.groups()
-                mem_info = MemoryInfo(
-                    region=region.strip(),
-                    used=used.strip(),
-                    total=total.strip(),
-                    percent=percent.strip()
+                region, used, total, percent = match.groups()  # type: ignore
+                mem_info = MemoryInfo(  # type: ignore
+                    region=str(region).strip(),
+                    used=str(used).strip(),
+                    total=str(total).strip(),
+                    percent=str(percent).strip()
                 )
                 state.stats.memory_reports.append(mem_info)
 
@@ -2512,6 +2523,9 @@ def main():
 
     try:
         if args.rebuild or args.clean:
+            if not implementation:
+                console.print(f"❌ [red]不支持的构建系统: {build_system_name}[/red]")
+                return 1
             console.print(f"🧹 [yellow]正在清理项目...[/yellow]")
             clean_cmd = implementation.get_clean_command(build_args)
             result = subprocess.run(clean_cmd, capture_output=True, text=True)
